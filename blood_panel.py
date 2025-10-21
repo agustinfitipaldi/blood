@@ -173,6 +173,75 @@ class BloodPanelUI:
     MIN_WIDTH = 120
     MIN_HEIGHT = 40
 
+    # ASCII art digits (3 lines tall, 3 chars wide)
+    ASCII_DIGITS = {
+        '0': [
+            "▄█▄",
+            "█ █",
+            "▀█▀"
+        ],
+        '1': [
+            " █ ",
+            "▄█ ",
+            "▀█▀"
+        ],
+        '2': [
+            "▄█▄",
+            " ▄▀",
+            "█▄▄"
+        ],
+        '3': [
+            "▄█▄",
+            " ▄█",
+            "▄█▀"
+        ],
+        '4': [
+            "█ █",
+            "▀▀█",
+            "  █"
+        ],
+        '5': [
+            "█▄▄",
+            "▀▄█",
+            "▄█▀"
+        ],
+        '6': [
+            "▄█▄",
+            "█▄▄",
+            "▀█▀"
+        ],
+        '7': [
+            "▄▄█",
+            "  █",
+            " █ "
+        ],
+        '8': [
+            "▄█▄",
+            "▄█▄",
+            "▀█▀"
+        ],
+        '9': [
+            "▄█▄",
+            "▀▀█",
+            "▄█▀"
+        ],
+        '.': [
+            "   ",
+            "   ",
+            " ▄ "
+        ],
+        '-': [
+            "   ",
+            "───",
+            "   "
+        ],
+        ' ': [
+            "   ",
+            "   ",
+            "   "
+        ]
+    }
+
     def __init__(self, db: Database):
         self.db = db
         self.term = Terminal()
@@ -250,6 +319,20 @@ class BloodPanelUI:
                     if key and key.lower() == 'q':
                         return False
 
+    def _render_big_number(self, value_str: str) -> List[str]:
+        """Render a number as big ASCII art, returns 3 lines"""
+        # Limit to reasonable length
+        value_str = str(value_str)[:8]
+
+        # Build 3 lines by concatenating digit lines
+        lines = ["", "", ""]
+        for char in value_str:
+            digit_lines = self.ASCII_DIGITS.get(char, self.ASCII_DIGITS[' '])
+            for i in range(3):
+                lines[i] += digit_lines[i]
+
+        return lines
+
     def _first_time_setup(self):
         """Show welcome screen and create first component"""
         print(self.term.home() + self.term.clear())
@@ -299,7 +382,7 @@ class BloodPanelUI:
                         self._render()
 
     def _render(self):
-        """Render the full UI with 3-card rolodex layout"""
+        """Render the dashboard with rolodex component list, value boxes, and graph"""
         # Clear screen and paint black background
         print(self.term.home() + self.term.clear())
 
@@ -312,45 +395,179 @@ class BloodPanelUI:
             self._render_empty_state()
             return
 
-        # Get the 3 cards to display (with wraparound)
-        num_components = len(self.components)
-        prev_idx = (self.current_index - 1) % num_components
-        curr_idx = self.current_index
-        next_idx = (self.current_index + 1) % num_components
+        # Get current component
+        component = self.components[self.current_index]
+        entries = self.db.get_entries_for_component(component.id)
 
-        # Calculate vertical positions - adjusted for better spacing
+        # Layout positions (vertically centered)
         center_y = self.term.height // 2
+        arrow_y = center_y
 
-        # Only show prev/next cards if we have more than 1 component
-        if num_components > 1:
-            # Previous card (above, smaller, dimmed)
-            self._render_card(
-                self.components[prev_idx],
-                center_y - 18,  # Higher up to avoid overlap
-                scale=0.65,
-                dimmed=True
-            )
+        left_x = 2
+        arrow_x = 6
+        name_x = 10
+        box1_x = 35
+        box2_x = 48
+        box3_x = 61
+        graph_x = 80
 
-            # Next card (below, smaller, dimmed)
-            self._render_card(
-                self.components[next_idx],
-                center_y + 4,  # Lower down to avoid overlap
-                scale=0.65,
-                dimmed=True
-            )
+        # === LEFT: Scrolling component list with stationary arrow ===
+        # Show 2 components above and 2 below the selected one
+        num_components = len(self.components)
 
-        # Current card (center, full size, bright)
-        self._render_card(
-            self.components[curr_idx],
-            center_y - 11,  # Center position
-            scale=1.0,
-            dimmed=False
-        )
+        for offset in [-2, -1, 0, 1, 2]:
+            idx = (self.current_index + offset) % num_components
+            comp = self.components[idx]
+            y = arrow_y + (offset * 2)  # 2 lines spacing between components
+
+            # Perspective scaling
+            if offset == 0:
+                # Selected component - bright and bold
+                name_display = f"{comp.name} ({comp.unit})"
+                # Truncate long names
+                if len(name_display) > 20:
+                    name_display = name_display[:17] + "..."
+
+                # Arrow
+                with self.term.location(arrow_x, y):
+                    print(self.term.bold(self.term.color_rgb(255, 215, 0)("──>")))
+
+                # Name
+                with self.term.location(name_x, y):
+                    print(self.term.bold(self.term.color_rgb(255, 0, 0)(name_display)))
+            elif abs(offset) == 1:
+                # ±1 position - 80% brightness, smaller
+                name_display = comp.name[:15]
+                with self.term.location(name_x + 2, y):
+                    print(self.term.color_rgb(180, 0, 0)(name_display))
+            else:
+                # ±2 position - 60% brightness, even smaller
+                name_display = comp.name[:12]
+                with self.term.location(name_x + 4, y):
+                    print(self.term.color_rgb(120, 0, 0)(name_display))
+
+        # === CENTER: Three value boxes ===
+        latest_3 = entries[:3] if len(entries) >= 3 else entries + [None] * (3 - len(entries))
+        latest_3.reverse()  # Oldest to newest (left to right)
+
+        box_positions = [box1_x, box2_x, box3_x]
+        for i, (box_x, entry) in enumerate(zip(box_positions, latest_3)):
+            self._render_value_box(box_x, center_y - 3, entry, component.unit)
+
+        # === RIGHT: Fixed square graph ===
+        if len(entries) >= 2:
+            self._render_small_graph(graph_x, center_y - 10, component, entries)
+        else:
+            # Not enough data for graph
+            with self.term.location(graph_x + 5, center_y):
+                print(self.term.yellow("Need 2+"))
+            with self.term.location(graph_x + 5, center_y + 1):
+                print(self.term.yellow("entries"))
 
         # Show controls at bottom
         controls = "j/k/↑↓: nav  │  n: new  │  e: edit  │  d: delete  │  c: component  │  q: quit"
         with self.term.location((self.term.width - len(controls)) // 2, self.term.height - 2):
             print(self.term.on_black(self.term.red(controls)))
+
+    def _render_value_box(self, x: int, y: int, entry: Optional[Entry], unit: str):
+        """Render a single value box with date and big number (smaller size)"""
+        box_width = 11
+        box_height = 6
+
+        # Draw box border
+        top = "┌" + "─" * (box_width - 2) + "┐"
+        bottom = "└" + "─" * (box_width - 2) + "┘"
+
+        with self.term.location(x, y):
+            print(self.term.color_rgb(255, 0, 0)(top))
+
+        for i in range(1, box_height - 1):
+            with self.term.location(x, y + i):
+                print(self.term.color_rgb(255, 0, 0)("│" + " " * (box_width - 2) + "│"))
+
+        with self.term.location(x, y + box_height - 1):
+            print(self.term.color_rgb(255, 0, 0)(bottom))
+
+        # Draw content
+        if entry:
+            # Date on top (small, just MM-DD)
+            date_str = entry.date[5:]  # MM-DD only
+            with self.term.location(x + 1, y + 1):
+                print(self.term.yellow(date_str))
+
+            # Big number (3-line ASCII)
+            value_str = f"{entry.value:.1f}"
+            big_lines = self._render_big_number(value_str)
+
+            for i, line in enumerate(big_lines):
+                with self.term.location(x + 1, y + 2 + i):
+                    # Truncate if too long
+                    display = line[:box_width - 2]
+                    print(self.term.bold(self.term.color_rgb(255, 215, 0)(display)))
+        else:
+            # Empty box - show placeholder
+            with self.term.location(x + 3, y + 3):
+                print(self.term.color_rgb(100, 100, 100)("---"))
+
+    def _render_small_graph(self, x: int, y: int, component: Component, entries: List[Entry]):
+        """Render a small square graph in fixed position on the right"""
+        graph_size = 20  # Square: 20x20
+
+        # Draw graph border
+        top = "┌" + "─" * (graph_size - 2) + "┐"
+        bottom = "└" + "─" * (graph_size - 2) + "┘"
+
+        with self.term.location(x, y):
+            print(self.term.color_rgb(255, 0, 0)(top))
+
+        for i in range(1, graph_size - 1):
+            with self.term.location(x, y + i):
+                print(self.term.color_rgb(255, 0, 0)("│" + " " * (graph_size - 2) + "│"))
+
+        with self.term.location(x, y + graph_size - 1):
+            print(self.term.color_rgb(255, 0, 0)(bottom))
+
+        # Render graph using plotext
+        sorted_entries = sorted(entries, key=lambda e: e.date)
+        values = [e.value for e in sorted_entries]
+
+        # Configure plotext - use simpler numeric x-axis instead of dates
+        plt.clf()
+        plt.plotsize(graph_size - 4, graph_size - 4)
+        plt.theme('dark')
+
+        # Plot with numeric x-axis (indices)
+        x_vals = list(range(len(values)))
+        plt.plot(x_vals, values, marker="●", color="red")
+
+        # Add normal range lines if defined
+        if component.normal_min:
+            plt.hline(component.normal_min, "yellow")
+        if component.normal_max:
+            plt.hline(component.normal_max, "yellow")
+
+        # Minimal labels
+        plt.xlabel("")
+        plt.ylabel("")
+        plt.title("")
+
+        # Get plot output
+        try:
+            plot_str = plt.build()
+            lines = plot_str.split('\n')
+
+            # Draw inside the box
+            for i, line in enumerate(lines[:graph_size - 2]):
+                with self.term.location(x + 2, y + 1 + i):
+                    # Truncate if too long
+                    display = line[:graph_size - 4]
+                    print(display)
+        except Exception as e:
+            # Graph error
+            with self.term.location(x + 5, y + 9):
+                print(self.term.yellow("Error"))
+            with self.term.location(x + 5, y + 10):
+                print(self.term.yellow(str(e)[:8]))
 
     def _render_card(self, component: Component, y_pos: int, scale: float, dimmed: bool):
         """Render a single component card with perspective scaling"""
