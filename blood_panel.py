@@ -319,19 +319,11 @@ class BloodPanelUI:
                     if key and key.lower() == 'q':
                         return False
 
-    def _render_big_number(self, value_str: str) -> List[str]:
-        """Render a number as big ASCII art, returns 3 lines"""
+    def _render_big_number(self, value_str: str) -> str:
+        """Render a number as single bold text"""
         # Limit to reasonable length
         value_str = str(value_str)[:8]
-
-        # Build 3 lines by concatenating digit lines
-        lines = ["", "", ""]
-        for char in value_str:
-            digit_lines = self.ASCII_DIGITS.get(char, self.ASCII_DIGITS[' '])
-            for i in range(3):
-                lines[i] += digit_lines[i]
-
-        return lines
+        return value_str
 
     def _first_time_setup(self):
         """Show welcome screen and create first component"""
@@ -470,104 +462,107 @@ class BloodPanelUI:
             print(self.term.on_black(self.term.red(controls)))
 
     def _render_value_box(self, x: int, y: int, entry: Optional[Entry], unit: str):
-        """Render a single value box with date and big number (smaller size)"""
+        """Render a single value box with date above and large text number"""
         box_width = 11
-        box_height = 6
+        box_height = 5
 
-        # Draw box border
-        top = "┌" + "─" * (box_width - 2) + "┐"
-        bottom = "└" + "─" * (box_width - 2) + "┘"
+        # Date above box (if entry exists)
+        if entry:
+            # Full date YYYY-MM-DD above the box
+            with self.term.location(x, y - 1):
+                print(self.term.yellow(entry.date))
+
+        # Draw box border with double-line characters
+        top = "╔" + "═" * (box_width - 2) + "╗"
+        bottom = "╚" + "═" * (box_width - 2) + "╝"
 
         with self.term.location(x, y):
             print(self.term.color_rgb(255, 0, 0)(top))
 
         for i in range(1, box_height - 1):
             with self.term.location(x, y + i):
-                print(self.term.color_rgb(255, 0, 0)("│" + " " * (box_width - 2) + "│"))
+                print(self.term.color_rgb(255, 0, 0)("║" + " " * (box_width - 2) + "║"))
 
         with self.term.location(x, y + box_height - 1):
             print(self.term.color_rgb(255, 0, 0)(bottom))
 
         # Draw content
         if entry:
-            # Date on top (small, just MM-DD)
-            date_str = entry.date[5:]  # MM-DD only
-            with self.term.location(x + 1, y + 1):
-                print(self.term.yellow(date_str))
-
-            # Big number (3-line ASCII)
+            # Single bold number, centered
             value_str = f"{entry.value:.1f}"
-            big_lines = self._render_big_number(value_str)
+            display_str = self._render_big_number(value_str)
 
-            for i, line in enumerate(big_lines):
-                with self.term.location(x + 1, y + 2 + i):
-                    # Truncate if too long
-                    display = line[:box_width - 2]
-                    print(self.term.bold(self.term.color_rgb(255, 215, 0)(display)))
+            # Center horizontally
+            padding = (box_width - 2 - len(display_str)) // 2
+            centered = " " * padding + display_str
+
+            # Vertically center in box (box is 5 tall, so put at line 2)
+            with self.term.location(x + 1, y + 2):
+                print(self.term.bold(self.term.color_rgb(255, 215, 0)(centered)))
         else:
-            # Empty box - show placeholder
-            with self.term.location(x + 3, y + 3):
+            # Empty box - show placeholder, centered
+            with self.term.location(x + 3, y + 2):
                 print(self.term.color_rgb(100, 100, 100)("---"))
 
     def _render_small_graph(self, x: int, y: int, component: Component, entries: List[Entry]):
-        """Render a small square graph in fixed position on the right"""
-        graph_size = 20  # Square: 20x20
+        """Render a wide graph with just dots showing trend"""
+        graph_width = 35
+        graph_height = 18
 
-        # Draw graph border
-        top = "┌" + "─" * (graph_size - 2) + "┐"
-        bottom = "└" + "─" * (graph_size - 2) + "┘"
+        # Draw graph border with double-line characters
+        top = "╔" + "═" * (graph_width - 2) + "╗"
+        bottom = "╚" + "═" * (graph_width - 2) + "╝"
 
         with self.term.location(x, y):
             print(self.term.color_rgb(255, 0, 0)(top))
 
-        for i in range(1, graph_size - 1):
+        for i in range(1, graph_height - 1):
             with self.term.location(x, y + i):
-                print(self.term.color_rgb(255, 0, 0)("│" + " " * (graph_size - 2) + "│"))
+                print(self.term.color_rgb(255, 0, 0)("║" + " " * (graph_width - 2) + "║"))
 
-        with self.term.location(x, y + graph_size - 1):
+        with self.term.location(x, y + graph_height - 1):
             print(self.term.color_rgb(255, 0, 0)(bottom))
 
-        # Render graph using plotext
+        # Manual graph rendering - just dots, no lines
         sorted_entries = sorted(entries, key=lambda e: e.date)
         values = [e.value for e in sorted_entries]
 
-        # Configure plotext - use simpler numeric x-axis instead of dates
-        plt.clf()
-        plt.plotsize(graph_size - 4, graph_size - 4)
-        plt.theme('dark')
+        if len(values) < 2:
+            with self.term.location(x + 10, y + 8):
+                print(self.term.yellow("Need 2+"))
+            return
 
-        # Plot with numeric x-axis (indices)
-        x_vals = list(range(len(values)))
-        plt.plot(x_vals, values, marker="●", color="red")
+        # Calculate graph area
+        graph_w = graph_width - 4
+        graph_h = graph_height - 4
 
-        # Add normal range lines if defined
-        if component.normal_min:
-            plt.hline(component.normal_min, "yellow")
-        if component.normal_max:
-            plt.hline(component.normal_max, "yellow")
+        # Find min/max for scaling
+        min_val = min(values)
+        max_val = max(values)
 
-        # Minimal labels
-        plt.xlabel("")
-        plt.ylabel("")
-        plt.title("")
+        # Add some padding to range
+        val_range = max_val - min_val
+        if val_range == 0:
+            val_range = 1
+        min_val -= val_range * 0.1
+        max_val += val_range * 0.1
+        val_range = max_val - min_val
 
-        # Get plot output
-        try:
-            plot_str = plt.build()
-            lines = plot_str.split('\n')
+        # Draw dots only
+        for i, val in enumerate(values):
+            # Calculate position
+            x_pos = int((i / (len(values) - 1)) * (graph_w - 1))
+            y_pos = int((1 - (val - min_val) / val_range) * (graph_h - 1))
 
-            # Draw inside the box
-            for i, line in enumerate(lines[:graph_size - 2]):
-                with self.term.location(x + 2, y + 1 + i):
-                    # Truncate if too long
-                    display = line[:graph_size - 4]
-                    print(display)
-        except Exception as e:
-            # Graph error
-            with self.term.location(x + 5, y + 9):
-                print(self.term.yellow("Error"))
-            with self.term.location(x + 5, y + 10):
-                print(self.term.yellow(str(e)[:8]))
+            # Draw dot
+            with self.term.location(x + 2 + x_pos, y + 2 + y_pos):
+                print(self.term.bold(self.term.color_rgb(255, 0, 0)("●")))
+
+        # Draw Y-axis scale (min and max values)
+        with self.term.location(x + 2, y + 2):
+            print(self.term.yellow(f"{max_val:.1f}"))
+        with self.term.location(x + 2, y + graph_height - 3):
+            print(self.term.yellow(f"{min_val:.1f}"))
 
     def _render_card(self, component: Component, y_pos: int, scale: float, dimmed: bool):
         """Render a single component card with perspective scaling"""
