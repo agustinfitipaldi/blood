@@ -6,6 +6,7 @@ Track your blood panel data with style.
 
 import sqlite3
 import sys
+import csv
 from datetime import datetime, date
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
@@ -457,7 +458,7 @@ class BloodPanelUI:
                 print(self.term.yellow("entries"))
 
         # Show controls at bottom
-        controls = "j/k/↑↓: nav  │  n: new  │  e: edit  │  d: delete  │  c: component  │  q: quit"
+        controls = "j/k/↑↓: nav  │  n: new  │  e: edit  │  d: delete  │  c: component  │  x: export  │  q: quit"
         with self.term.location((self.term.width - len(controls)) // 2, self.term.height - 2):
             print(self.term.on_black(self.term.red(controls)))
 
@@ -744,6 +745,9 @@ class BloodPanelUI:
                 self._show_delete_entry_modal()
         elif key.lower() == 'c':
             self._show_create_component_modal()
+        elif key.lower() == 'x':
+            if self.components:
+                self._export_to_csv()
 
     def _show_add_entry_modal(self):
         """Show modal to add a new entry for the current component"""
@@ -1029,6 +1033,48 @@ class BloodPanelUI:
                 return
             elif key.name == 'KEY_ESCAPE':
                 return
+
+    def _export_to_csv(self):
+        """Export all data to CSV file"""
+        # Get filename from user
+        modal_width = 70
+        modal_height = 8
+        x = (self.term.width - modal_width) // 2
+        y = (self.term.height - modal_height) // 2
+
+        print(self.term.clear())
+        self._draw_modal_box(x, y, modal_width, modal_height, "Export to CSV")
+
+        # Default filename with date
+        default_name = f"blood_panel_backup_{date.today().isoformat()}.csv"
+
+        with self.term.location(x + 2, y + 3):
+            print(self.term.red("Filename:"))
+
+        filename = self._get_input_prefilled(x + 2, y + 4, 50, default_name)
+        if not filename:
+            return
+
+        # Export all data
+        try:
+            with open(filename, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['component_name', 'date', 'value', 'unit', 'notes'])
+
+                for component in self.components:
+                    entries = self.db.get_entries_for_component(component.id)
+                    for entry in entries:
+                        writer.writerow([
+                            component.name,
+                            entry.date,
+                            entry.value,
+                            component.unit,
+                            entry.notes
+                        ])
+
+            self._show_message(f"Exported to {filename}! Press any key.")
+        except Exception as e:
+            self._show_message(f"Export failed: {str(e)}. Press any key.")
 
     def _draw_modal_box(self, x: int, y: int, width: int, height: int, title: str):
         """Draw a modal box with a title"""

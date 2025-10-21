@@ -1,40 +1,31 @@
 # Blood Panel Rolodex
 
-> _Track your blood panels like it's 1985, but with proper graphs._
+> _Track your blood panels like it's 1985_
 
-An 80s-themed terminal user interface for tracking blood panel data. Hand-rendered rolodex cards, neon red/yellow aesthetic, instant SQLite backend, terminal graphs. No framework bloat, no cloud nonsense.
+An 80's themed blood panel data tracker.
 
-```
-╔══════════════════════════════════════════════════════════════════════════════════════════════╗
-║                                    HbA1c (mmol/mol)                                          ║
-╟──────────────────────────────────────────────────────────────────────────────────────────────╢
-║  2025-01-15  →  38.50 mmol/mol                                                               ║
-║  2024-10-20  →  41.20 mmol/mol                                                               ║
-║  2024-07-18  →  39.80 mmol/mol                                                               ║
-╟──────────────────────────────────────────────────────────────────────────────────────────────╢
-║                                                                                              ║
-║    45 ┤                    ●                                                                 ║
-║    40 ┤        ●       ●       ●                                                             ║
-║    35 ┼────────────────────────────────────────                                             ║
-║         2024-07    2024-10    2025-01                                                        ║
-║                                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════════════════════╝
-```
+
 
 ## Features
 
-- **Artisanal Rolodex Interface**: 3-card perspective layout with proper scaling
-  - Center card: full-size, bright neon red
-  - Previous/next cards: 65% scale, dimmed
-  - j/k or arrow keys to flip through
-- **Terminal Graphs**: Plotext integration with date-series support
-  - Red data line, yellow normal range indicators
+- **Artisanal Rolodex Interface**: Stationary arrow with scrolling component names
+  - Selected component: bright neon red with arrow pointer (→)
+  - Nearby components: perspective-scaled (80%, 60% brightness)
+  - j/k or arrow keys to navigate
+- **Value Boxes**: Three boxes showing latest entries (oldest to newest, left to right)
+  - Double-line borders (╔═╗║╚╝) for that retro thickness
+  - Full YYYY-MM-DD dates above each box
+  - Bold yellow numbers, centered and legible
+- **Terminal Graphs**: Manual ASCII graph rendering with date-series support
+  - Red dots (●) showing trend over time
+  - Yellow Y-axis scale indicators
   - Auto-scaling based on your data
-  - Only renders on center card (no wasted cycles)
+  - 35×18 wide rectangle format
 - **CRUD Operations**: Create, Read, Update, Delete entries
   - Add entries with date validation
   - Edit existing entries (pre-filled forms)
   - Delete with navigable list
+  - Export all data to CSV for backup
 - **Neon Aesthetic**: Warm 80s blood-red theme
   - RGB(255, 0, 0) primary borders/text
   - RGB(255, 215, 0) accents and highlights
@@ -52,10 +43,14 @@ An 80s-themed terminal user interface for tracking blood panel data. Hand-render
 - Python 3.10 or newer
 - Terminal emulator with 256-color support (tested on Alacritty, iTerm2, Terminal.app)
 - At least 120x40 terminal size
+- cool-retro-term recommended for peak aesthetic
 
 ### Setup
 
 ```bash
+# (Optional) Install cool-retro-term
+brew install --cask cool-retro-term
+
 # Clone/download this repo
 cd health
 
@@ -92,29 +87,8 @@ Or use the venv directly:
 | `e` | Edit existing entry (shows list, arrow keys to select) |
 | `d` | Delete entry (shows list, arrow keys to select) |
 | `c` | Create new component |
+| `x` | Export all data to CSV (backup) |
 | `q` | Quit |
-
-## Typical Workflow
-
-```bash
-# 1. Launch
-./run.sh
-
-# 2. Navigate to component you just got blood work for
-#    (press j/k until you see the right card)
-
-# 3. Add new entry
-#    Press 'n'
-#    Enter value: 38.5
-#    Enter date: [just hit Enter for today, or type YYYY-MM-DD]
-#    Notes: (optional)
-
-# 4. Graph updates instantly
-
-# 5. Made a typo? Press 'e', select the entry, fix it
-
-# 6. Done? Press 'q'
-```
 
 ## Architecture
 
@@ -145,9 +119,9 @@ health/
 
 **Rendering Pipeline**:
 1. Paint entire screen black (override terminal background)
-2. Render prev/next cards if >1 component (dimmed, scaled)
-3. Render current card (full brightness, full scale)
-4. Embed plotext graph in current card
+2. Render scrolling component list with stationary arrow (perspective scaling)
+3. Render three value boxes showing latest entries
+4. Render ASCII graph with red dots and yellow scale
 5. Show controls at bottom
 
 ### Technologies
@@ -239,45 +213,6 @@ Examples:
 
 **Solution**: Fixed in current version (we configure plotext for ISO dates). Delete your `blood_panels.db` and start fresh if you have old bad data.
 
-## Development Notes
-
-### Why blessed instead of Textual/Rich?
-
-Textual wants to give you layouts and widgets. We're hand-drawing a rolodex with perspective scaling. That requires manual character positioning. blessed gives us low-level terminal control without the curses pain.
-
-### Why SQLite instead of JSON/CSV?
-
-Because querying. "Give me last 10 entries for component X ordered by date" is one line of SQL. In JSON you're parsing, filtering, sorting in Python. SQLite is instant even with thousands of entries.
-
-### Why not use a web interface?
-
-Because terminal is faster. No browser, no server, no webpack, no JavaScript. Just pure data entry at typing speed.
-
-### Performance Characteristics
-
-- **Startup time**: ~50ms (SQLite connection + component load)
-- **Render time**: <10ms for full screen redraw
-- **Input latency**: <5ms (blocking inkey, event-driven)
-- **Database queries**: <1ms for typical operations
-
-Tested with 100 components and 10,000 entries - still instant.
-
-## Future Ideas (You'll Never Build These)
-
-- Export to CSV/JSON
-- Import from lab results PDF
-- Plotting multiple components on same graph
-- Trend analysis / moving averages
-- Notifications when values go out of range
-- Sync to cloud (encrypted)
-- Mobile companion app
-- AI health insights
-- Integration with Apple Health
-- Multi-user support
-- Backup/restore functionality
-
-But honestly, you probably just need to track HbA1c, creatinine, and LDL. The current feature set is fine.
-
 ## License
 
 Do whatever you want with this code. It's a single-file Python script for personal health tracking. If it helps you, great. If you improve it, cool. No warranty, no support, no corporate bullshit.
@@ -285,8 +220,4 @@ Do whatever you want with this code. It's a single-file Python script for person
 ## Acknowledgments
 
 Built with:
-- A terminal emulator
-- Too much caffeine
-- A proper understanding that "shipped" beats "perfect"
-
-Inspired by every over-engineered health tracking app that requires an account, subscription, and privacy policy to track a single number.
+- Claude!
