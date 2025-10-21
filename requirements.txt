@@ -1,0 +1,2 @@
+blessed==1.20.0
+plotext==5.2.8
