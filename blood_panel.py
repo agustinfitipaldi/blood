@@ -26,6 +26,7 @@ class Component:
     unit: str
     normal_min: Optional[float]
     normal_max: Optional[float]
+    long_title: str = ""
 
 
 @dataclass
@@ -83,13 +84,19 @@ class Database:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_entries_component ON entries(component_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_entries_date ON entries(date)")
 
+        # Migration: Add long_title column if it doesn't exist
+        cursor.execute("PRAGMA table_info(components)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'long_title' not in columns:
+            cursor.execute("ALTER TABLE components ADD COLUMN long_title TEXT DEFAULT ''")
+
         self.conn.commit()
 
     def get_all_components(self) -> List[Component]:
         """Get all components ordered by name"""
         cursor = self.conn.cursor()
         rows = cursor.execute(
-            "SELECT id, name, unit, normal_min, normal_max FROM components ORDER BY name"
+            "SELECT id, name, unit, normal_min, normal_max, long_title FROM components ORDER BY name"
         ).fetchall()
 
         return [Component(
@@ -97,18 +104,28 @@ class Database:
             name=row['name'],
             unit=row['unit'],
             normal_min=row['normal_min'],
-            normal_max=row['normal_max']
+            normal_max=row['normal_max'],
+            long_title=row['long_title'] or ""
         ) for row in rows]
 
     def create_component(self, component: Component) -> int:
         """Create a new component, returns the new ID"""
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO components (name, unit, normal_min, normal_max) VALUES (?, ?, ?, ?)",
-            (component.name, component.unit, component.normal_min, component.normal_max)
+            "INSERT INTO components (name, unit, normal_min, normal_max, long_title) VALUES (?, ?, ?, ?, ?)",
+            (component.name, component.unit, component.normal_min, component.normal_max, component.long_title)
         )
         self.conn.commit()
         return cursor.lastrowid
+
+    def update_component(self, component: Component):
+        """Update an existing component"""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE components SET name = ?, unit = ?, normal_min = ?, normal_max = ?, long_title = ? WHERE id = ?",
+            (component.name, component.unit, component.normal_min, component.normal_max, component.long_title, component.id)
+        )
+        self.conn.commit()
 
     def get_entries_for_component(self, component_id: int, limit: Optional[int] = None) -> List[Entry]:
         """Get entries for a component, ordered by date descending"""
@@ -171,8 +188,8 @@ class BloodPanelUI:
     """Main UI controller for the blood panel rolodex"""
 
     # Minimum terminal dimensions
-    MIN_WIDTH = 120
-    MIN_HEIGHT = 40
+    MIN_WIDTH = 80
+    MIN_HEIGHT = 24
 
     # ASCII art digits (3 lines tall, 3 chars wide)
     ASCII_DIGITS = {
@@ -397,35 +414,31 @@ class BloodPanelUI:
         arrow_y = center_y
 
         left_x = 2
-        arrow_x = 6
-        name_x = 10
-        box1_x = 35
-        box2_x = 48
-        box3_x = 61
-        graph_x = 80
+        arrow_x = 4
+        name_x = 8
+        box1_x = 25
+        box2_x = 35
+        box3_x = 45
+        graph_x = 55
 
         # === LEFT: Scrolling component list with stationary arrow ===
-        # Show 2 components above and 2 below the selected one
+        # Show 1 component above and 1 below the selected one
         num_components = len(self.components)
 
-        for offset in [-2, -1, 0, 1, 2]:
+        for offset in [-1, 0, 1]:
             idx = (self.current_index + offset) % num_components
             comp = self.components[idx]
             y = arrow_y + (offset * 2)  # 2 lines spacing between components
 
             # Perspective scaling
             if offset == 0:
-                # Selected component - bright and bold
-                name_display = f"{comp.name} ({comp.unit})"
+                # Selected component - bright and bold (no units - shown below boxes)
+                name_display = comp.name
                 # Truncate long names
-                if len(name_display) > 20:
-                    name_display = name_display[:17] + "..."
+                if len(name_display) > 18:
+                    name_display = name_display[:15] + "..."
 
-                # Arrow
-                with self.term.location(arrow_x, y):
-                    print(self.term.bold(self.term.color_rgb(255, 215, 0)("──>")))
-
-                # Name
+                # Name (no arrow - space saving)
                 with self.term.location(name_x, y):
                     print(self.term.bold(self.term.color_rgb(255, 0, 0)(name_display)))
             elif abs(offset) == 1:
@@ -433,11 +446,6 @@ class BloodPanelUI:
                 name_display = comp.name[:15]
                 with self.term.location(name_x + 2, y):
                     print(self.term.color_rgb(180, 0, 0)(name_display))
-            else:
-                # ±2 position - 60% brightness, even smaller
-                name_display = comp.name[:12]
-                with self.term.location(name_x + 4, y):
-                    print(self.term.color_rgb(120, 0, 0)(name_display))
 
         # === CENTER: Three value boxes ===
         latest_3 = entries[:3] if len(entries) >= 3 else entries + [None] * (3 - len(entries))
@@ -447,31 +455,43 @@ class BloodPanelUI:
         for i, (box_x, entry) in enumerate(zip(box_positions, latest_3)):
             self._render_value_box(box_x, center_y - 3, entry, component.unit)
 
-        # === RIGHT: Fixed square graph ===
+        # Long title display below boxes
+        if component.long_title:
+            title_text = f"{component.long_title} ({component.unit})"
+        else:
+            title_text = f"({component.unit})"
+
+        # Center in the box area
+        title_x = box1_x + (29 - len(title_text)) // 2  # 29 = width of 3 boxes
+        with self.term.location(title_x, center_y + 3):
+            print(self.term.yellow(title_text[:40]))  # Truncate if too long
+
+        # === RIGHT: Graph ===
         if len(entries) >= 2:
-            self._render_small_graph(graph_x, center_y - 10, component, entries)
+            self._render_small_graph(graph_x, center_y - 6, component, entries)
         else:
             # Not enough data for graph
-            with self.term.location(graph_x + 5, center_y):
+            with self.term.location(graph_x + 3, center_y):
                 print(self.term.yellow("Need 2+"))
-            with self.term.location(graph_x + 5, center_y + 1):
+            with self.term.location(graph_x + 3, center_y + 1):
                 print(self.term.yellow("entries"))
 
         # Show controls at bottom
-        controls = "j/k/↑↓: nav  │  n: new  │  e: edit  │  d: delete  │  c: component  │  x: export  │  q: quit"
+        controls = "j/k:nav │ n:new │ e:edit │ d:del │ c:new │ s:set │ x:exp │ q:quit"
         with self.term.location((self.term.width - len(controls)) // 2, self.term.height - 2):
             print(self.term.on_black(self.term.red(controls)))
 
     def _render_value_box(self, x: int, y: int, entry: Optional[Entry], unit: str):
         """Render a single value box with date above and large text number"""
-        box_width = 11
+        box_width = 9
         box_height = 5
 
         # Date above box (if entry exists)
         if entry:
-            # Full date YYYY-MM-DD above the box
+            # Shortened date YY-MM-DD above the box (8 chars to save space)
+            short_date = entry.date[2:]  # "2025-01-15" -> "25-01-15"
             with self.term.location(x, y - 1):
-                print(self.term.yellow(entry.date))
+                print(self.term.yellow(short_date))
 
         # Draw box border with double-line characters
         top = "╔" + "═" * (box_width - 2) + "╗"
@@ -507,8 +527,8 @@ class BloodPanelUI:
 
     def _render_small_graph(self, x: int, y: int, component: Component, entries: List[Entry]):
         """Render a wide graph with just dots showing trend"""
-        graph_width = 35
-        graph_height = 18
+        graph_width = 25
+        graph_height = 12
 
         # Draw graph border with double-line characters
         top = "╔" + "═" * (graph_width - 2) + "╗"
@@ -745,6 +765,9 @@ class BloodPanelUI:
                 self._show_delete_entry_modal()
         elif key.lower() == 'c':
             self._show_create_component_modal()
+        elif key.lower() == 's':
+            if self.components:
+                self._show_edit_component_modal()
         elif key.lower() == 'x':
             if self.components:
                 self._export_to_csv()
@@ -814,7 +837,7 @@ class BloodPanelUI:
         """Show modal to create a new component"""
         # Draw modal box
         modal_width = 70
-        modal_height = 18
+        modal_height = 20
         x = (self.term.width - modal_width) // 2
         y = (self.term.height - modal_height) // 2
 
@@ -837,18 +860,24 @@ class BloodPanelUI:
         if not unit:
             return
 
-        # Normal range min
+        # Long title input
         with self.term.location(x + 2, y + 9):
+            print(self.term.red("Long title (optional):"))
+
+        long_title = self._get_input(x + 2, y + 10, 50)
+
+        # Normal range min
+        with self.term.location(x + 2, y + 12):
             print(self.term.red("Normal range minimum (optional):"))
 
-        min_str = self._get_input(x + 2, y + 10, 15)
+        min_str = self._get_input(x + 2, y + 13, 15)
         normal_min = float(min_str) if min_str else None
 
         # Normal range max
-        with self.term.location(x + 2, y + 12):
+        with self.term.location(x + 2, y + 15):
             print(self.term.red("Normal range maximum (optional):"))
 
-        max_str = self._get_input(x + 2, y + 13, 15)
+        max_str = self._get_input(x + 2, y + 16, 15)
         normal_max = float(max_str) if max_str else None
 
         # Create component
@@ -857,7 +886,8 @@ class BloodPanelUI:
             name=name,
             unit=unit,
             normal_min=normal_min,
-            normal_max=normal_max
+            normal_max=normal_max,
+            long_title=long_title or ""
         )
         new_id = self.db.create_component(component)
 
@@ -869,6 +899,71 @@ class BloodPanelUI:
                 break
 
         self._show_message("Component created! Press any key to continue.")
+
+    def _show_edit_component_modal(self):
+        """Show modal to edit the current component settings"""
+        component = self.components[self.current_index]
+
+        # Draw modal box
+        modal_width = 70
+        modal_height = 20
+        x = (self.term.width - modal_width) // 2
+        y = (self.term.height - modal_height) // 2
+
+        print(self.term.clear())
+        self._draw_modal_box(x, y, modal_width, modal_height, f"Edit Component: {component.name}")
+
+        # Name input (pre-filled)
+        with self.term.location(x + 2, y + 3):
+            print(self.term.red("Component name:"))
+
+        name = self._get_input_prefilled(x + 2, y + 4, 40, component.name)
+        if not name:
+            return
+
+        # Unit input (pre-filled)
+        with self.term.location(x + 2, y + 6):
+            print(self.term.red("Unit:"))
+
+        unit = self._get_input_prefilled(x + 2, y + 7, 20, component.unit)
+        if not unit:
+            return
+
+        # Long title input (pre-filled)
+        with self.term.location(x + 2, y + 9):
+            print(self.term.red("Long title (optional):"))
+
+        long_title = self._get_input_prefilled(x + 2, y + 10, 50, component.long_title)
+
+        # Normal range min (pre-filled)
+        with self.term.location(x + 2, y + 12):
+            print(self.term.red("Normal range minimum (optional):"))
+
+        min_str = self._get_input_prefilled(x + 2, y + 13, 15, str(component.normal_min) if component.normal_min else "")
+        normal_min = float(min_str) if min_str else None
+
+        # Normal range max (pre-filled)
+        with self.term.location(x + 2, y + 15):
+            print(self.term.red("Normal range maximum (optional):"))
+
+        max_str = self._get_input_prefilled(x + 2, y + 16, 15, str(component.normal_max) if component.normal_max else "")
+        normal_max = float(max_str) if max_str else None
+
+        # Update component
+        updated_component = Component(
+            id=component.id,
+            name=name,
+            unit=unit,
+            normal_min=normal_min,
+            normal_max=normal_max,
+            long_title=long_title or ""
+        )
+        self.db.update_component(updated_component)
+
+        # Reload components to reflect changes
+        self.components = self.db.get_all_components()
+
+        self._show_message("Component updated! Press any key to continue.")
 
     def _show_edit_entry_modal(self):
         """Show modal to select and edit an entry"""

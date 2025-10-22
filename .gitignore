@@ -10,6 +10,9 @@ __pycache__/
 blood_panels.db
 *.db
 
+# CSV exports (user data)
+*.csv
+
 # IDE
 .vscode/
 .idea/

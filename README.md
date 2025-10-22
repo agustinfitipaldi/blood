@@ -8,19 +8,20 @@ An 80's themed blood panel data tracker.
 
 ## Features
 
-- **Artisanal Rolodex Interface**: Stationary arrow with scrolling component names
-  - Selected component: bright neon red with arrow pointer (→)
-  - Nearby components: perspective-scaled (80%, 60% brightness)
+- **Artisanal Rolodex Interface**: Stationary component list
+  - Selected component: bright neon red (no arrow for space saving)
+  - Nearby components: perspective-scaled (80% brightness)
   - j/k or arrow keys to navigate
+  - Long titles displayed below boxes for detailed descriptions
 - **Value Boxes**: Three boxes showing latest entries (oldest to newest, left to right)
   - Double-line borders (╔═╗║╚╝) for that retro thickness
-  - Full YYYY-MM-DD dates above each box
+  - Shortened YY-MM-DD dates above each box
   - Bold yellow numbers, centered and legible
 - **Terminal Graphs**: Manual ASCII graph rendering with date-series support
   - Red dots (●) showing trend over time
   - Yellow Y-axis scale indicators
   - Auto-scaling based on your data
-  - 35×18 wide rectangle format
+  - 25×12 compact format
 - **CRUD Operations**: Create, Read, Update, Delete entries
   - Add entries with date validation
   - Edit existing entries (pre-filled forms)
@@ -42,7 +43,7 @@ An 80's themed blood panel data tracker.
 
 - Python 3.10 or newer
 - Terminal emulator with 256-color support (tested on Alacritty, iTerm2, Terminal.app)
-- At least 120x40 terminal size
+- At least 80x24 terminal size
 - cool-retro-term recommended for peak aesthetic
 
 ### Setup
@@ -70,7 +71,7 @@ Or use the venv directly:
 
 ### First Run
 
-1. Terminal will check size - resize to at least 120x40
+1. Terminal will check size - resize to at least 80x24
 2. Welcome screen prompts you to create your first component
 3. Enter component details:
    - Name: e.g., "HbA1c", "Creatinine", "LDL Cholesterol"
@@ -87,6 +88,7 @@ Or use the venv directly:
 | `e` | Edit existing entry (shows list, arrow keys to select) |
 | `d` | Delete entry (shows list, arrow keys to select) |
 | `c` | Create new component |
+| `s` | Edit component settings (name, unit, long title, normal ranges) |
 | `x` | Export all data to CSV (backup) |
 | `q` | Quit |
 
@@ -150,7 +152,8 @@ CREATE TABLE components (
     name TEXT NOT NULL UNIQUE,
     unit TEXT NOT NULL,
     normal_min REAL,
-    normal_max REAL
+    normal_max REAL,
+    long_title TEXT DEFAULT ''
 )
 ```
 
@@ -182,7 +185,7 @@ Examples:
 
 **Problem**: "TERMINAL CALIBRATION REQUIRED" won't go away
 
-**Solution**: Your terminal is too small. Minimum 120x40.
+**Solution**: Your terminal is too small. Minimum 80x24.
 - macOS: Cmd+Plus to increase font size, or resize window
 - Linux: Right-click title bar → Preferences → Initial terminal size
 
